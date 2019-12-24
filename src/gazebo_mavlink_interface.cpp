@@ -235,7 +235,7 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
 
     presetManager->GetCurrentProfileParam("real_time_update_rate", param);
     double real_time_update_rate = boost::any_cast<double>(param);
-    const double correct_real_time_update_rate = 250.0;
+    const double correct_real_time_update_rate = 800.0;
     if (real_time_update_rate != correct_real_time_update_rate)
     {
       gzerr << "real_time_update_rate is set to " << real_time_update_rate
@@ -245,7 +245,7 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
 
     presetManager->GetCurrentProfileParam("max_step_size", param);
     const double max_step_size = boost::any_cast<double>(param);
-    const double correct_max_step_size = 0.004;
+    const double correct_max_step_size = 0.00125;
     if (max_step_size != correct_max_step_size)
     {
       gzerr << "max_step_size is set to " << max_step_size
@@ -452,7 +452,7 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
       }
 
       // The socket reuse is necessary for reconnecting to the same address
-      // if the socket does not close but gets stuck in TIME_WAIT. This can happen 
+      // if the socket does not close but gets stuck in TIME_WAIT. This can happen
       // if the server is suddenly closed, for example, if the robot is deleted in gazebo.
       int socket_reuse = 1;
       result = setsockopt(simulator_socket_fd_, SOL_SOCKET, SO_REUSEADDR, &socket_reuse, sizeof(socket_reuse));
@@ -1222,7 +1222,7 @@ void GazeboMavlinkInterface::pollForMAVLinkMessages()
         continue;
       }
 
-      if (!(fds_[i].revents & POLLIN)) { 
+      if (!(fds_[i].revents & POLLIN)) {
         continue;
       }
 
@@ -1239,7 +1239,7 @@ void GazeboMavlinkInterface::pollForMAVLinkMessages()
         }
 
         // client closed the connection orderly, only makes sense on tcp
-        if (use_tcp_ && ret == 0) { 
+        if (use_tcp_ && ret == 0) {
           gzerr << "Connection closed by client." << "\n";
           close_conn_ = true;
           continue;
