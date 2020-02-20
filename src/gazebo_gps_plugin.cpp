@@ -34,8 +34,7 @@ GpsPlugin::GpsPlugin() : ModelPlugin()
 
 GpsPlugin::~GpsPlugin()
 {
-    if (updateConnection_)
-      updateConnection_->~Connection();
+  updateConnection_->~Connection();
 }
 
 void GpsPlugin::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf)
@@ -163,7 +162,7 @@ void GpsPlugin::OnUpdate(const common::UpdateInfo&){
   std_z = 1.0;
 
   // fill SITLGps msg
-  gps_msg.set_time_usec(current_time.Double() * 1e6);
+  gps_msg.set_time(current_time.Double());
   gps_msg.set_latitude_deg(latlon.first * 180.0 / M_PI);
   gps_msg.set_longitude_deg(latlon.second * 180.0 / M_PI);
   gps_msg.set_altitude(pos_W_I.Z() + alt_home + noise_gps_pos.Z() + gps_bias.Z());
@@ -183,7 +182,7 @@ void GpsPlugin::OnUpdate(const common::UpdateInfo&){
 
     while (true) {
       gps_msg = gps_delay_buffer.front();
-      double gps_current_delay = current_time.Double() - gps_delay_buffer.front().time_usec() / 1e6f;
+      double gps_current_delay = current_time.Double() - gps_delay_buffer.front().time();
       if (gps_delay_buffer.empty()) {
         // abort if buffer is empty already
         break;
@@ -204,10 +203,10 @@ void GpsPlugin::OnUpdate(const common::UpdateInfo&){
   }
 
   // fill Groundtruth msg
-  groundtruth_msg.set_time_usec(current_time.Double() * 1e6);
+  groundtruth_msg.set_time(current_time.Double());
   groundtruth_msg.set_latitude_rad(latlon_gt.first);
   groundtruth_msg.set_longitude_rad(latlon_gt.second);
-  groundtruth_msg.set_altitude(pos_W_I.Z() + alt_home);
+  groundtruth_msg.set_altitude(-pos_W_I.Z() + alt_home);
   groundtruth_msg.set_velocity_east(velocity_current_W.X());
   groundtruth_msg.set_velocity_north(velocity_current_W.Y());
   groundtruth_msg.set_velocity_up(velocity_current_W.Z());

@@ -21,7 +21,6 @@
 #include <vector>
 #include <thread>
 #include <mutex>
-#include <condition_variable>
 #include <deque>
 #include <atomic>
 #include <chrono>
@@ -64,16 +63,14 @@
 #include <IRLock.pb.h>
 #include <Groundtruth.pb.h>
 #include <Odometry.pb.h>
-#include <MagneticField.pb.h>
-#include <Pressure.pb.h>
 
 #include <mavlink/v2.0/common/mavlink.h>
 #include "msgbuffer.h"
 
+#include <geo_mag_declination.h>
+
 static const uint32_t kDefaultMavlinkUdpPort = 14560;
-static const uint32_t kDefaultMavlinkTcpPort = 4560;
 static const uint32_t kDefaultQGCUdpPort = 14550;
-static const uint32_t kDefaultSDKUdpPort = 14540;
 
 using lock_guard = std::lock_guard<std::recursive_mutex>;
 static constexpr auto kDefaultDevice = "/dev/ttyACM0";
@@ -94,8 +91,6 @@ typedef const boost::shared_ptr<const sensor_msgs::msgs::OpticalFlow> OpticalFlo
 typedef const boost::shared_ptr<const sensor_msgs::msgs::Range> SonarPtr;
 typedef const boost::shared_ptr<const sensor_msgs::msgs::Range> LidarPtr;
 typedef const boost::shared_ptr<const sensor_msgs::msgs::SITLGps> GpsPtr;
-typedef const boost::shared_ptr<const sensor_msgs::msgs::MagneticField> MagnetometerPtr;
-typedef const boost::shared_ptr<const sensor_msgs::msgs::Pressure> BarometerPtr;
 
 // Default values
 static const std::string kDefaultNamespace = "";
@@ -111,8 +106,6 @@ static const std::string kDefaultSonarTopic = "/sonar_model/link/sonar";
 static const std::string kDefaultIRLockTopic = "/camera/link/irlock";
 static const std::string kDefaultGPSTopic = "/gps";
 static const std::string kDefaultVisionTopic = "/vision_odom";
-static const std::string kDefaultMagTopic = "/mag";
-static const std::string kDefaultBarometerTopic = "/baro";
 
 //! Rx packer framing status. (same as @p mavlink::mavlink_framing_t)
 enum class Framing : uint8_t {
@@ -125,7 +118,7 @@ enum class Framing : uint8_t {
 class GazeboMavlinkInterface : public ModelPlugin {
 public:
   GazeboMavlinkInterface() : ModelPlugin(),
-    received_first_actuator_(false),
+    received_first_referenc_(false),
     namespace_(kDefaultNamespace),
     protocol_version_(2.0),
     motor_velocity_reference_pub_topic_(kDefaultMotorVelocityReferencePubTopic),
@@ -134,8 +127,7 @@ public:
     use_left_elevon_pid_(false),
     use_right_elevon_pid_(false),
     vehicle_is_tailsitter_(false),
-    send_vision_estimation_(false),
-    send_odometry_(false),
+    send_odometry_(true),
     imu_sub_topic_(kDefaultImuTopic),
     opticalFlow_sub_topic_(kDefaultOpticalFlowTopic),
     lidar_sub_topic_(kDefaultLidarTopic),
@@ -143,8 +135,6 @@ public:
     irlock_sub_topic_(kDefaultIRLockTopic),
     gps_sub_topic_(kDefaultGPSTopic),
     vision_sub_topic_(kDefaultVisionTopic),
-    mag_sub_topic_(kDefaultMagTopic),
-    baro_sub_topic_(kDefaultBarometerTopic),
     model_ {},
     world_(nullptr),
     left_elevon_joint_(nullptr),
@@ -163,18 +153,7 @@ public:
     groundtruth_lon_rad(0.0),
     groundtruth_altitude(0.0),
     mavlink_udp_port_(kDefaultMavlinkUdpPort),
-    mavlink_tcp_port_(kDefaultMavlinkTcpPort),
-    simulator_socket_fd_(0),
-    simulator_tcp_client_fd_(0),
-    use_tcp_(false),
-    qgc_udp_port_(kDefaultQGCUdpPort),
-    sdk_udp_port_(kDefaultSDKUdpPort),
-    remote_qgc_addr_ {},
-    local_qgc_addr_ {},
-    remote_sdk_addr_ {},
-    local_sdk_addr_ {},
-    qgc_socket_fd_(0),
-    sdk_socket_fd_(0),
+    qgc_udp_port_(kDefaultMavlinkUdpPort),
     serial_enabled_(false),
     tx_q {},
     rx_buf {},
@@ -197,7 +176,7 @@ protected:
   void OnUpdate(const common::UpdateInfo&  /*_info*/);
 
 private:
-  bool received_first_actuator_;
+  bool received_first_referenc_;
   Eigen::VectorXd input_reference_;
 
   float protocol_version_;
@@ -231,7 +210,6 @@ private:
 
   bool vehicle_is_tailsitter_;
 
-  bool send_vision_estimation_;
   bool send_odometry_;
 
   std::vector<physics::JointPtr> joints_;
@@ -239,7 +217,6 @@ private:
 
   /// \brief Pointer to the update event connection.
   event::ConnectionPtr updateConnection_;
-  event::ConnectionPtr sigIntConnection_;
 
   boost::thread callback_queue_thread_;
   void QueueThread();
@@ -251,17 +228,9 @@ private:
   void OpticalFlowCallback(OpticalFlowPtr& opticalFlow_msg);
   void IRLockCallback(IRLockPtr& irlock_msg);
   void VisionCallback(OdomPtr& odom_msg);
-  void MagnetometerCallback(MagnetometerPtr& mag_msg);
-  void BarometerCallback(BarometerPtr& baro_msg);
-  void send_mavlink_message(const mavlink_message_t *message);
-  void forward_mavlink_message(const mavlink_message_t *message);
-  void handle_message(mavlink_message_t *msg, bool &received_actuator);
-  void pollForMAVLinkMessages();
-  void pollFromQgcAndSdk();
-  void SendSensorMessages();
-  void handle_control(double _dt);
-  bool IsRunning();
-  void onSigInt();
+  void send_mavlink_message(const mavlink_message_t *message, const int destination_port = 0);
+  void handle_message(mavlink_message_t *msg);
+  void pollForMAVLinkMessages(double _dt, uint32_t _timeoutMs);
 
   // Serial interface
   void open();
@@ -274,6 +243,9 @@ private:
   }
 
   static const unsigned n_out_max = 16;
+  double alt_home = 488.0;   // meters
+
+  unsigned _rotor_count;
 
   double input_offset_[n_out_max];
   double input_scaling_[n_out_max];
@@ -292,8 +264,6 @@ private:
   transport::SubscriberPtr gps_sub_;
   transport::SubscriberPtr groundtruth_sub_;
   transport::SubscriberPtr vision_sub_;
-  transport::SubscriberPtr mag_sub_;
-  transport::SubscriberPtr baro_sub_;
 
   std::string imu_sub_topic_;
   std::string lidar_sub_topic_;
@@ -303,12 +273,7 @@ private:
   std::string gps_sub_topic_;
   std::string groundtruth_sub_topic_;
   std::string vision_sub_topic_;
-  std::string mag_sub_topic_;
-  std::string baro_sub_topic_;
 
-  std::mutex last_imu_message_mutex_ {};
-  std::condition_variable last_imu_message_cond_ {};
-  sensor_msgs::msgs::Imu last_imu_message_;
   common::Time last_time_;
   common::Time last_imu_time_;
   common::Time last_actuator_time_;
@@ -317,55 +282,36 @@ private:
   double groundtruth_lon_rad;
   double groundtruth_altitude;
 
-  double imu_update_interval_ = 0.004; ///< Used for non-lockstep
+  double imu_update_interval_ = 0.004;
+
+  void handle_control(double _dt);
 
   ignition::math::Vector3d gravity_W_;
   ignition::math::Vector3d velocity_prev_W_;
-  ignition::math::Vector3d mag_n_;
+  ignition::math::Vector3d mag_d_;
 
-  double temperature_;
-  double pressure_alt_;
-  double abs_pressure_;
+  std::default_random_engine rand_;
+  std::normal_distribution<float> randn_;
 
-  std::default_random_engine random_generator_;
-  std::normal_distribution<float> standard_normal_distribution_;
-
-  struct sockaddr_in local_simulator_addr_;
-  socklen_t local_simulator_addr_len_;
-  struct sockaddr_in remote_simulator_addr_;
-  socklen_t remote_simulator_addr_len_;
-
-  int qgc_udp_port_;
-  struct sockaddr_in remote_qgc_addr_;
-  socklen_t remote_qgc_addr_len_;
-  struct sockaddr_in local_qgc_addr_;
-  socklen_t local_qgc_addr_len_;
-
-  int sdk_udp_port_;
-  struct sockaddr_in remote_sdk_addr_;
-  socklen_t remote_sdk_addr_len_;
-  struct sockaddr_in local_sdk_addr_;
-  socklen_t local_sdk_addr_len_;
-
+  int _fd;
+  struct sockaddr_in _myaddr;     ///< The locally bound address
+  struct sockaddr_in _srcaddr;    ///< SITL instance
+  socklen_t _addrlen;
   unsigned char _buf[65535];
-  bool use_tcp_ = false;
+  struct pollfd fds[1];
 
+  struct sockaddr_in _srcaddr_2;  ///< MAVROS
+
+  //so we dont have to do extra callbacks
+  ignition::math::Vector3d optflow_gyro {};
   double optflow_distance;
   double sonar_distance;
 
   in_addr_t mavlink_addr_;
-  int mavlink_udp_port_; // MAVLink refers to the PX4 simulator interface here
-  int mavlink_tcp_port_; // MAVLink refers to the PX4 simulator interface here
+  int mavlink_udp_port_;
 
-  int simulator_socket_fd_;
-  int simulator_tcp_client_fd_;
-
-  int qgc_socket_fd_ {-1};
-  int sdk_socket_fd_ {-1};
-
-  bool enable_lockstep_ = false;
-  double speed_factor_ = 1.0;
-  int64_t previous_imu_seq_ = 0;
+  in_addr_t qgc_addr_;
+  int qgc_udp_port_;
 
   // Serial interface
   mavlink_status_t m_status;
@@ -384,6 +330,5 @@ private:
   bool hil_mode_;
   bool hil_state_level_;
 
-  std::atomic<bool> gotSigInt_ {false};
-};
+  };
 }

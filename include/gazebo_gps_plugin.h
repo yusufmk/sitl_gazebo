@@ -59,11 +59,9 @@ protected:
   virtual void Load(physics::ModelPtr _model, sdf::ElementPtr _sdf);
   virtual void OnUpdate(const common::UpdateInfo&);
 
-protected:
-  /* Keep this protected so that it's possible to unit test it. */
+private:
   std::pair<double, double> reproject(ignition::math::Vector3d& pos);
 
-private:
   std::string namespace_;
   std::default_random_engine random_generator_;
   std::normal_distribution<float> standard_normal_distribution_;

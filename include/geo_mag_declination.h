@@ -34,17 +34,14 @@
 /**
 * @file geo_mag_declination.h
 *
-* Calculation / lookup table for earth magnetic field.
+* Calculation / lookup table for earth magnetic field declination.
 *
 */
 
 #pragma once
 
-// return magnetic declination in degrees
+__BEGIN_DECLS
+
 float get_mag_declination(float lat, float lon);
 
-// return magnetic field inclination in degrees
-float get_mag_inclination(float lat, float lon);
-
-// return magnetic field strength in centi-Tesla
-float get_mag_strength(float lat, float lon);
+__END_DECLS
