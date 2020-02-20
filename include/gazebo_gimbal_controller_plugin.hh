@@ -61,6 +61,11 @@ namespace gazebo
   static double kPIDYawCmdMax = 1.0;
   static double kPIDYawCmdMin = -1.0;
 
+  // Default rotation directions
+  static double kRollDir = -1.0;
+  static double kPitchDir = -1.0;
+  static double kYawDir = 1.0;
+
   typedef const boost::shared_ptr<const sensor_msgs::msgs::Imu> ImuPtr;
 
   class GAZEBO_VISIBLE GimbalControllerPlugin : public ModelPlugin
@@ -86,21 +91,6 @@ namespace gazebo
     private: void OnRollStringMsg(ConstGzStringPtr &_msg);
     private: void OnYawStringMsg(ConstGzStringPtr &_msg);
 #endif
-
-    /// \TODO something to move into Angle class
-    /// \brief returns _angle1 normalized about
-    /// (_reference - M_PI, _reference + M_PI]
-    /// \param[in] _angle1 input angle
-    /// \param[in] _reference reference input angle for normalization
-    /// \return normalized _angle1 about _reference
-    private: double NormalizeAbout(double _angle, double _reference);
-
-    /// \TODO something to move into Angle class
-    /// \brief returns shortest angular distance from _from to _to
-    /// \param[in] _from starting anglular position
-    /// \param[in] _to end angular position
-    /// \return distance traveled from starting to end angular positions
-    private: double ShortestAngularDistance(double _from, double _to);
 
     private: sdf::ElementPtr sdf;
 
@@ -131,6 +121,10 @@ namespace gazebo
 
     private: std::string status;
 
+    private: double rDir;
+    private: double pDir;
+    private: double yDir;
+
     private: double pitchCommand;
     private: double yawCommand;
     private: double rollCommand;
@@ -141,11 +135,6 @@ namespace gazebo
     private: common::PID rollPid;
     private: common::PID yawPid;
     private: common::Time lastUpdateTime;
-
-    private: ignition::math::Vector3d ThreeAxisRot(
-      double r11, double r12, double r21, double r31, double r32);
-    private: ignition::math::Vector3d QtoZXY(
-      const ignition::math::Quaterniond &_q);
   };
 }
 #endif

@@ -20,12 +20,17 @@ include(GNUInstallDirs)
 list(APPEND CMAKE_MODULE_PATH /usr/local/share/cmake/Modules)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
-option(BUILD_GSTREAMER_PLUGIN "enable gstreamer plugin" "OFF")
+option(BUILD_GSTREAMER_PLUGIN "enable gstreamer plugin" OFF)
+option(BUILD_ROS_INTERFACE "Enable building ROS dependent plugins" OFF)
 
-option(BUILD_ROS_INTERFACE "Enable building ROS dependent plugins" "OFF")
+option(SEND_VISION_ESTIMATION_DATA "Send Mavlink VISION_POSITION_ESTIMATE msgs" OFF)
+option(SEND_ODOMETRY_DATA "Send Mavlink ODOMETRY msgs" OFF)
+
+# Set c++11 or higher
+include(EnableC++XX)
 
 ## System dependencies are found with CMake's conventions
-find_package(Boost 1.58 REQUIRED COMPONENTS system thread timer)
+find_package(Boost 1.58 REQUIRED COMPONENTS system thread filesystem)
 find_package(gazebo REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_program(px4 REQUIRED)
@@ -33,6 +38,7 @@ find_package(PythonInterp REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(TinyXML REQUIRED)
 if (BUILD_GSTREAMER_PLUGIN)
+  set(GStreamer_FIND_VERSION "1.0")
   find_package(GStreamer)
   if (GSTREAMER_FOUND)
     if("${GAZEBO_VERSION}" VERSION_LESS "8.0")
@@ -52,9 +58,6 @@ set( OpticalFlow_LIBS "OpticalFlow" )
 
 # for ROS subscribers and publishers
 if (BUILD_ROS_INTERFACE)
-  find_package(mavros REQUIRED)
-  find_package(mavros_msgs REQUIRED)
-  find_package(mav_msgs REQUIRED)
   find_package(geometry_msgs REQUIRED)
   find_package(roscpp REQUIRED)
   find_package(sensor_msgs REQUIRED)
@@ -122,9 +125,7 @@ endif()
 ###########
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -Wno-deprecated-declarations")
-
-include(EnableC++XX)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${GAZEBO_CXX_FLAGS} -Wno-deprecated-declarations")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations")
 
 set(GAZEBO_MSG_INCLUDE_DIRS)
 foreach(ITR ${GAZEBO_INCLUDE_DIRS})
@@ -187,11 +188,24 @@ set(enable_camera "false")
 set(enable_wind "false")
 set(rotors_description_dir "${CMAKE_CURRENT_SOURCE_DIR}/models/rotors_description")
 set(scripts_dir "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
+# set the vision estimation to be sent if set by the CMake option SEND_VISION_ESTIMATION_DATA
+set(send_vision_estimation "false")
+if (SEND_VISION_ESTIMATION_DATA)
+  set(send_vision_estimation "true")
+endif()
+
+# if SEND_ODOMETRY_DATA option is set, then full odometry data is sent instead of
+# only the visual pose estimate
+set(send_odometry "false")
+if (SEND_ODOMETRY_DATA)
+  set(send_odometry "true")
+  set(send_vision_estimation "false")
+endif()
 
 add_custom_command(OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/models/iris/iris.sdf
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   COMMAND rm -f ${CMAKE_CURRENT_SOURCE_DIR}/models/iris/iris.sdf
-  COMMAND ${PYTHON_EXECUTABLE} ${scripts_dir}/xacro.py -o  ${rotors_description_dir}/urdf/iris_base.urdf  ${rotors_description_dir}/urdf/iris_base.xacro enable_mavlink_interface:=${enable_mavlink_interface} enable_ground_truth:=${enable_ground_truth} enable_wind:=${enable_wind} enable_logging:=${enable_logging} rotors_description_dir:=${rotors_description_dir}
+  COMMAND ${PYTHON_EXECUTABLE} ${scripts_dir}/xacro.py -o  ${rotors_description_dir}/urdf/iris_base.urdf  ${rotors_description_dir}/urdf/iris_base.xacro enable_mavlink_interface:=${enable_mavlink_interface} enable_ground_truth:=${enable_ground_truth} enable_wind:=${enable_wind} enable_logging:=${enable_logging} rotors_description_dir:=${rotors_description_dir} send_vision_estimation:=${send_vision_estimation} send_odometry:=${send_odometry}
   COMMAND gz sdf -p  ${rotors_description_dir}/urdf/iris_base.urdf >> ${CMAKE_CURRENT_SOURCE_DIR}/models/iris/iris.sdf
   COMMAND rm -f ${rotors_description_dir}/urdf/iris_base.urdf
   DEPENDS ${rotors_description_dir}/urdf/iris.xacro
@@ -240,7 +254,7 @@ set(mav_msgs
   msgs/MotorSpeed.proto
   )
 set(nav_msgs msgs/Odometry.proto)
-#set(physics_msgs msgs/Wind.proto)
+set(physics_msgs msgs/Wind.proto)
 set(std_msgs msgs/Int32.proto)
 set(sensor_msgs
   msgs/Imu.proto
@@ -250,17 +264,19 @@ set(sensor_msgs
   msgs/Range.proto
   msgs/SITLGps.proto
   msgs/OpticalFlow.proto
+  msgs/MagneticField.proto
+  msgs/Pressure.proto
   )
 
 PROTOBUF_GENERATE_CPP(MAV_PROTO_SRCS MAV_PROTO_HDRS ${mav_msgs})
 PROTOBUF_GENERATE_CPP(NAV_PROTO_SRCS NAV_PROTO_HDRS ${nav_msgs})
-#PROTOBUF_GENERATE_CPP(PHY_PROTO_SRCS PHY_PROTO_HDRS ${physics_msgs})
+PROTOBUF_GENERATE_CPP(PHY_PROTO_SRCS PHY_PROTO_HDRS ${physics_msgs})
 PROTOBUF_GENERATE_CPP(STD_PROTO_SRCS STD_PROTO_HDRS ${std_msgs})
 PROTOBUF_GENERATE_CPP(SEN_PROTO_SRCS SEN_PROTO_HDRS ${sensor_msgs})
 
 add_library(mav_msgs SHARED ${MAV_PROTO_SRCS})
 add_library(nav_msgs SHARED ${NAV_PROTO_SRCS})
-#add_library(physics_msgs SHARED ${PHY_PROTO_SRCS})
+add_library(physics_msgs SHARED ${PHY_PROTO_SRCS})
 add_library(std_msgs SHARED ${STD_PROTO_SRCS})
 add_library(sensor_msgs SHARED ${SEN_PROTO_SRCS})
 
@@ -269,7 +285,7 @@ add_library(sensor_msgs SHARED ${SEN_PROTO_SRCS})
 #---------#
 
 link_libraries(mav_msgs nav_msgs std_msgs sensor_msgs)
-#link_libraries(physics_msgs)
+link_libraries(physics_msgs)
 
 add_library(gazebo_geotagged_images_plugin SHARED src/gazebo_geotagged_images_plugin.cpp)
 add_library(gazebo_gps_plugin SHARED src/gazebo_gps_plugin.cpp)
@@ -282,10 +298,12 @@ add_library(gazebo_vision_plugin SHARED src/gazebo_vision_plugin.cpp)
 add_library(gazebo_controller_interface SHARED src/gazebo_controller_interface.cpp)
 add_library(gazebo_gimbal_controller_plugin SHARED src/gazebo_gimbal_controller_plugin.cpp)
 add_library(gazebo_imu_plugin SHARED src/gazebo_imu_plugin.cpp)
-add_library(gazebo_mavlink_interface SHARED src/gazebo_mavlink_interface.cpp src/geo_mag_declination.cpp)
+add_library(gazebo_mavlink_interface SHARED src/gazebo_mavlink_interface.cpp )
 add_library(gazebo_motor_model SHARED src/gazebo_motor_model.cpp)
 add_library(gazebo_multirotor_base_plugin SHARED src/gazebo_multirotor_base_plugin.cpp)
-#add_library(gazebo_wind_plugin SHARED src/gazebo_wind_plugin.cpp)
+add_library(gazebo_wind_plugin SHARED src/gazebo_wind_plugin.cpp)
+add_library(gazebo_magnetometer_plugin SHARED src/gazebo_magnetometer_plugin.cpp src/geo_mag_declination.cpp)
+add_library(gazebo_barometer_plugin SHARED src/gazebo_barometer_plugin.cpp)
 
 set(plugins
   gazebo_geotagged_images_plugin
@@ -302,7 +320,9 @@ set(plugins
   gazebo_mavlink_interface
   gazebo_motor_model
   gazebo_multirotor_base_plugin
-  #gazebo_wind_plugin
+  gazebo_wind_plugin
+  gazebo_magnetometer_plugin
+  gazebo_barometer_plugin
   )
 
 foreach(plugin ${plugins})
@@ -320,26 +340,15 @@ if (BUILD_ROS_INTERFACE)
 
   include_directories(
     include
-    ${mavros_msgs_INCLUDE_DIRS}
     ${geometry_msgs_INCLUDE_DIRS}
     ${sensor_msgs_INCLUDE_DIRS}
-    ${mav_msgs_INCLUDE_DIRS}
-    )
-  add_executable(gazebo_motor_failure_plugin
-    src/gazebo_motor_failure_plugin.cpp
-  )
-
-  add_dependencies(gazebo_motor_failure_plugin
-    ${catkin_EXPORTED_TARGETS}
-    ${mavros_EXPORTED_TARGETS}
-    ${mavros_msgs_EXPORTED_TARGETS}
   )
 
   target_link_libraries(gazebo_motor_failure_plugin
     ${catkin_LIBRARIES}
-    ${mavros_LIBRARIES}
+    ${roscpp_LIBRARIES}
+    ${GAZEBO_libraries}
   )
-  message(STATUS "adding gazebo_motor_failure_plugin to build")
 endif()
 
 if (GSTREAMER_FOUND)
@@ -369,7 +378,7 @@ endif()
 
 foreach(plugin ${plugins})
   add_dependencies(${plugin} mav_msgs nav_msgs std_msgs sensor_msgs)
-  # add_dependencies(${plugin} physics_msgs)
+  add_dependencies(${plugin} physics_msgs)
 endforeach()
 
 # Configure the setup script
@@ -378,6 +387,15 @@ if (catkin_FOUND)
     DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/cmake
     SHELLS sh)
 endif()
+
+
+################
+## Unit Tests ##
+################
+include(UnitTests)
+
+add_subdirectory(unit_tests)
+
 
 #############
 ## Install ##
@@ -399,6 +417,8 @@ install(FILES ${worlds_list} DESTINATION ${RESOURCE_PATH}/worlds)
 
 configure_file(src/setup.sh.in "${CMAKE_CURRENT_BINARY_DIR}/setup.sh" @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/setup.sh DESTINATION ${RESOURCE_PATH})
+
+install(FILES ${PROJECT_SOURCE_DIR}/package.xml DESTINATION ${RESOURCE_PATH})
 
 #############
 ## Testing ##
