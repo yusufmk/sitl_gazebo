@@ -164,8 +164,10 @@ public:
     groundtruth_altitude(0.0),
     mavlink_udp_port_(kDefaultMavlinkUdpPort),
     mavlink_tcp_port_(kDefaultMavlinkTcpPort),
+    mavlink_tcp_port_2_(kDefaultMavlinkTcpPort+1),
     simulator_socket_fd_(0),
     simulator_tcp_client_fd_(0),
+    simulator_tcp_client_fd_2_(0),
     use_tcp_(false),
     qgc_udp_port_(kDefaultQGCUdpPort),
     sdk_udp_port_(kDefaultSDKUdpPort),
@@ -331,7 +333,11 @@ private:
   std::normal_distribution<float> standard_normal_distribution_;
 
   struct sockaddr_in local_simulator_addr_;
+  struct sockaddr_in local_simulator_addr_2_;
+
   socklen_t local_simulator_addr_len_;
+  socklen_t local_simulator_addr_len_2_;
+
   struct sockaddr_in remote_simulator_addr_;
   socklen_t remote_simulator_addr_len_;
 
@@ -356,9 +362,13 @@ private:
   in_addr_t mavlink_addr_;
   int mavlink_udp_port_; // MAVLink refers to the PX4 simulator interface here
   int mavlink_tcp_port_; // MAVLink refers to the PX4 simulator interface here
+  int mavlink_tcp_port_2_;
 
   int simulator_socket_fd_;
+  int simulator_socket_fd_2_;
+
   int simulator_tcp_client_fd_;
+  int simulator_tcp_client_fd_2_;
 
   int qgc_socket_fd_ {-1};
   int sdk_socket_fd_ {-1};
@@ -385,5 +395,6 @@ private:
   bool hil_state_level_;
 
   std::atomic<bool> gotSigInt_ {false};
+  bool simulate_redundant_ {false};
 };
 }

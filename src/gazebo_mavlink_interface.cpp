@@ -324,7 +324,14 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
 
   if (_sdf->HasElement("mavlink_tcp_port")) {
     mavlink_tcp_port_ = _sdf->GetElement("mavlink_tcp_port")->Get<int>();
+    mavlink_tcp_port_2_ = mavlink_tcp_port_+1;
   }
+  if(_sdf->HasElement("simulate_redundant"))
+  {
+    simulate_redundant_ = _sdf->GetElement("simulate_redundant")->Get<bool>();
+  }
+
+
   model_param(worldName, model_->GetName(), "mavlink_tcp_port", mavlink_tcp_port_);
 
   local_qgc_addr_.sin_port = htonl(INADDR_ANY);
@@ -424,21 +431,47 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
     local_simulator_addr_.sin_family = AF_INET;
     local_simulator_addr_len_ = sizeof(local_simulator_addr_);
 
+    memset((char *)&local_simulator_addr_2_, 0, sizeof(local_simulator_addr_2_));
+    local_simulator_addr_2_.sin_family = AF_INET;
+    local_simulator_addr_len_2_ = sizeof(local_simulator_addr_2_);
+
     if (use_tcp_) {
 
       local_simulator_addr_.sin_addr.s_addr = htonl(mavlink_addr_);
       local_simulator_addr_.sin_port = htons(mavlink_tcp_port_);
+
+      local_simulator_addr_2_.sin_addr.s_addr = htonl(mavlink_addr_);
+      local_simulator_addr_2_.sin_port = htons(mavlink_tcp_port_2_);
 
       if ((simulator_socket_fd_ = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         gzerr << "Creating TCP socket failed: " << strerror(errno) << ", aborting\n";
         abort();
       }
 
+      // YUSUF COMMENT
+      if(simulate_redundant_)
+      {
+        if ((simulator_socket_fd_2_ = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        gzerr << "Creating 2nd TCP socket failed: " << strerror(errno) << ", aborting\n";
+        abort();
+        }
+      }
+
+
       int yes = 1;
       int result = setsockopt(simulator_socket_fd_, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes));
       if (result != 0) {
         gzerr << "setsockopt failed: " << strerror(errno) << ", aborting\n";
         abort();
+      }
+
+if(simulate_redundant_)
+      {
+      result = setsockopt(simulator_socket_fd_2_, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes));
+      if (result != 0) {
+        gzerr << "setsockopt 2 failed: " << strerror(errno) << ", aborting\n";
+        abort();
+      }
       }
 
       struct linger nolinger {};
@@ -451,10 +484,30 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
         abort();
       }
 
+if(simulate_redundant_)
+      {
+      result = setsockopt(simulator_socket_fd_2_, SOL_SOCKET, SO_LINGER, &nolinger, sizeof(nolinger));
+      if (result != 0) {
+        gzerr << "setsockopt 2 failed: " << strerror(errno) << ", aborting\n";
+        abort();
+      }
+      }
+
       if (bind(simulator_socket_fd_, (struct sockaddr *)&local_simulator_addr_, local_simulator_addr_len_) < 0) {
         gzerr << "bind failed: " << strerror(errno) << ", aborting\n";
         abort();
+       }
+
+      // YUSUF COMMENT BURAYA IKINCI BIND YAPILACAK ?!??????
+      if (simulate_redundant_)
+      {
+        gzmsg << "\n\nSIMULATE REDUNDANT CALISIYOR BIND EDILMEYE CALISIYOR..\n\n";
+        if (bind(simulator_socket_fd_2_, (struct sockaddr *)&local_simulator_addr_2_, local_simulator_addr_len_2_) < 0) {
+          gzerr << "bind 2 failed: " << strerror(errno) << ", aborting\n";
+          abort();
+        }
       }
+
 
       errno = 0;
       if (listen(simulator_socket_fd_, 0) < 0) {
@@ -462,7 +515,21 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
         abort();
       }
 
+      if (simulate_redundant_)
+      {
+        if (listen(simulator_socket_fd_2_, 0) < 0) {
+          gzerr << "listen 2 failed: " << strerror(errno) << ", aborting\n";
+          abort();
+        }
+      }
+
+
+      gzmsg << "BURAYA GIRDI !!!!!!!!!!!!!!!!!!!!!!!!!!\n\nHOPPIDIIIIIIIIII\n\n";
       simulator_tcp_client_fd_ = accept(simulator_socket_fd_, (struct sockaddr *)&remote_simulator_addr_, &remote_simulator_addr_len_);
+      if (simulate_redundant_)
+      {
+        simulator_tcp_client_fd_2_ = accept(simulator_socket_fd_2_, (struct sockaddr *)&remote_simulator_addr_, &remote_simulator_addr_len_);
+      }
 
     } else {
       remote_simulator_addr_.sin_addr.s_addr = mavlink_addr_;
@@ -497,6 +564,8 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
   {
     send_odometry_ = _sdf->GetElement("send_odometry")->Get<bool>();
   }
+
+
 
   mavlink_status_t* chan_state = mavlink_get_channel_status(MAVLINK_COMM_0);
 
@@ -593,11 +662,20 @@ void GazeboMavlinkInterface::send_mavlink_message(const mavlink_message_t *messa
 
   } else {
     uint8_t buffer[MAVLINK_MAX_PACKET_LEN];
+
     int packetlen = mavlink_msg_to_send_buffer(buffer, message);
 
     ssize_t len;
+
     if (use_tcp_) {
+      // YUSUF COMMENT BURADA İKİNCİ CLIENT A DA GÖNDERİLECEK
       len = send(simulator_tcp_client_fd_, buffer, packetlen, 0);
+      if (simulate_redundant_)
+      {
+        // gzmsg << "sensor verileri 2 gonderildi !!\n";
+        len = send(simulator_tcp_client_fd_2_, buffer, packetlen, 0);
+      }
+
     } else {
       len = sendto(simulator_socket_fd_, buffer, packetlen, 0, (struct sockaddr *)&remote_simulator_addr_, remote_simulator_addr_len_);
     }
@@ -1094,21 +1172,32 @@ void GazeboMavlinkInterface::pollForMAVLinkMessages()
     return;
   }
 
-  struct pollfd fds[1] = {};
+  struct pollfd fds[2] = {};
+  int fds_count = 1;
+
+  fd_set readfds;
 
   if (use_tcp_) {
     fds[0].fd = simulator_tcp_client_fd_;
+    if (simulate_redundant_)
+    {
+      fds[1].fd = simulator_tcp_client_fd_2_;
+      fds[1].events = POLLIN;
+      fds_count = 2;
+    }
+
   } else {
     fds[0].fd = simulator_socket_fd_;
   }
   fds[0].events = POLLIN;
+
 
   bool received_actuator = false;
 
   do {
     int timeout_ms = (received_first_actuator_ && enable_lockstep_) ? 1000 : 0;
 
-    int ret = ::poll(&fds[0], 1, timeout_ms);
+    int ret = ::poll(&fds[0], fds_count, timeout_ms);
 
     if (ret == 0 && timeout_ms > 0) {
       gzerr << "poll timeout\n";
@@ -1119,7 +1208,6 @@ void GazeboMavlinkInterface::pollForMAVLinkMessages()
     }
 
     if (fds[0].revents & POLLIN) {
-
       int len = recvfrom(fds[0].fd, _buf, sizeof(_buf), 0, (struct sockaddr *)&remote_simulator_addr_, &remote_simulator_addr_len_);
       if (len > 0) {
         mavlink_message_t msg;
@@ -1136,6 +1224,25 @@ void GazeboMavlinkInterface::pollForMAVLinkMessages()
         }
       }
     }
+    if (fds[1].revents & POLLIN)
+    {
+      int len = recvfrom(fds[1].fd, _buf, sizeof(_buf), 0, (struct sockaddr *)&remote_simulator_addr_, &remote_simulator_addr_len_);
+      if (len > 0) {
+        mavlink_message_t msg;
+        mavlink_status_t status;
+        for (unsigned i = 0; i < len; ++i)
+        {
+          if (mavlink_parse_char(MAVLINK_COMM_0, _buf[i], &msg, &status))
+          {
+            if (hil_mode_) {
+              send_mavlink_message(&msg);
+            }
+            handle_message(&msg, received_actuator);
+          }
+        }
+      }
+    }
+
   } while (received_first_actuator_ && !received_actuator && enable_lockstep_ && IsRunning() && !gotSigInt_);
 }
 
@@ -1327,6 +1434,11 @@ void GazeboMavlinkInterface::close()
 
     if (use_tcp_) {
       ::close(simulator_tcp_client_fd_);
+      if (simulate_redundant_)
+      {
+        ::close(simulator_tcp_client_fd_2_);
+      }
+
     } else {
       ::close(simulator_socket_fd_);
     }
