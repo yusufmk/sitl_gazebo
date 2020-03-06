@@ -163,9 +163,11 @@ public:
     groundtruth_lon_rad(0.0),
     groundtruth_altitude(0.0),
     mavlink_udp_port_(kDefaultMavlinkUdpPort),
+    mavlink_udp_port_2_(kDefaultMavlinkUdpPort+1),
     mavlink_tcp_port_(kDefaultMavlinkTcpPort),
     mavlink_tcp_port_2_(kDefaultMavlinkTcpPort+1),
     simulator_socket_fd_(0),
+    simulator_socket_fd_2_(0),
     simulator_tcp_client_fd_(0),
     simulator_tcp_client_fd_2_(0),
     use_tcp_(false),
@@ -361,6 +363,7 @@ private:
 
   in_addr_t mavlink_addr_;
   int mavlink_udp_port_; // MAVLink refers to the PX4 simulator interface here
+  int mavlink_udp_port_2_;
   int mavlink_tcp_port_; // MAVLink refers to the PX4 simulator interface here
   int mavlink_tcp_port_2_;
 

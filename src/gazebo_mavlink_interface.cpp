@@ -319,6 +319,7 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
 
   if (_sdf->HasElement("mavlink_udp_port")) {
     mavlink_udp_port_ = _sdf->GetElement("mavlink_udp_port")->Get<int>();
+    mavlink_udp_port_2_ = mavlink_udp_port_+1;
   }
   model_param(worldName, model_->GetName(), "mavlink_udp_port", mavlink_udp_port_);
 
@@ -465,13 +466,13 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
         abort();
       }
 
-if(simulate_redundant_)
+      if(simulate_redundant_)
       {
-      result = setsockopt(simulator_socket_fd_2_, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes));
-      if (result != 0) {
-        gzerr << "setsockopt 2 failed: " << strerror(errno) << ", aborting\n";
-        abort();
-      }
+        result = setsockopt(simulator_socket_fd_2_, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes));
+        if (result != 0) {
+          gzerr << "setsockopt 2 failed: " << strerror(errno) << ", aborting\n";
+          abort();
+        }
       }
 
       struct linger nolinger {};
@@ -484,13 +485,14 @@ if(simulate_redundant_)
         abort();
       }
 
-if(simulate_redundant_)
+      if(simulate_redundant_)
       {
-      result = setsockopt(simulator_socket_fd_2_, SOL_SOCKET, SO_LINGER, &nolinger, sizeof(nolinger));
-      if (result != 0) {
-        gzerr << "setsockopt 2 failed: " << strerror(errno) << ", aborting\n";
-        abort();
-      }
+        result = setsockopt(simulator_socket_fd_2_, SOL_SOCKET, SO_LINGER, &nolinger, sizeof(nolinger));
+        if (result != 0)
+        {
+          gzerr << "setsockopt 2 failed: " << strerror(errno) << ", aborting\n";
+          abort();
+        }
       }
 
       if (bind(simulator_socket_fd_, (struct sockaddr *)&local_simulator_addr_, local_simulator_addr_len_) < 0) {
@@ -523,29 +525,46 @@ if(simulate_redundant_)
         }
       }
 
-
-      gzmsg << "BURAYA GIRDI !!!!!!!!!!!!!!!!!!!!!!!!!!\n\nHOPPIDIIIIIIIIII\n\n";
       simulator_tcp_client_fd_ = accept(simulator_socket_fd_, (struct sockaddr *)&remote_simulator_addr_, &remote_simulator_addr_len_);
       if (simulate_redundant_)
       {
         simulator_tcp_client_fd_2_ = accept(simulator_socket_fd_2_, (struct sockaddr *)&remote_simulator_addr_, &remote_simulator_addr_len_);
       }
 
-    } else {
-      remote_simulator_addr_.sin_addr.s_addr = mavlink_addr_;
-      remote_simulator_addr_.sin_port = htons(mavlink_udp_port_);
+    }
+    else { // if USE UDP !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      remote_simulator_addr_.sin_addr.s_addr = mavlink_addr_; // INADDR_ANY
+      remote_simulator_addr_.sin_port = htons(mavlink_udp_port_); // 14560
 
       local_simulator_addr_.sin_addr.s_addr = htonl(INADDR_ANY);
       local_simulator_addr_.sin_port = htons(0);
+
+      local_simulator_addr_2_.sin_addr.s_addr = htonl(INADDR_ANY);
+      local_simulator_addr_2_.sin_port = htons(1);
 
       if ((simulator_socket_fd_ = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         gzerr << "Creating UDP socket failed: " << strerror(errno) << ", aborting\n";
         abort();
       }
 
+      if (simulate_redundant_)
+      {
+        if ((simulator_socket_fd_2_ = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        gzerr << "Creating UDP socket 2 failed: " << strerror(errno) << ", aborting\n";
+        abort();
+        }
+      }
+
       if (bind(simulator_socket_fd_, (struct sockaddr *)&local_simulator_addr_, local_simulator_addr_len_) < 0) {
         gzerr << "bind failed: " << strerror(errno) << ", aborting\n";
         abort();
+      }
+      if (simulate_redundant_)
+      {
+        if (bind(simulator_socket_fd_2_, (struct sockaddr *)&local_simulator_addr_, local_simulator_addr_len_) < 0) {
+        gzerr << "bind failed: " << strerror(errno) << ", aborting\n";
+        abort();
+        }
       }
     }
   }
@@ -666,6 +685,7 @@ void GazeboMavlinkInterface::send_mavlink_message(const mavlink_message_t *messa
     int packetlen = mavlink_msg_to_send_buffer(buffer, message);
 
     ssize_t len;
+    ssize_t len2;
 
     if (use_tcp_) {
       // YUSUF COMMENT BURADA İKİNCİ CLIENT A DA GÖNDERİLECEK
@@ -676,14 +696,24 @@ void GazeboMavlinkInterface::send_mavlink_message(const mavlink_message_t *messa
         len = send(simulator_tcp_client_fd_2_, buffer, packetlen, 0);
       }
 
-    } else {
+    } else
+    {
+      remote_simulator_addr_.sin_port = htons(mavlink_udp_port_); // 14560
       len = sendto(simulator_socket_fd_, buffer, packetlen, 0, (struct sockaddr *)&remote_simulator_addr_, remote_simulator_addr_len_);
+
+      remote_simulator_addr_.sin_port = htons(mavlink_udp_port_2_); // 14561
+      len2 = sendto(simulator_socket_fd_2_, buffer, packetlen, 0, (struct sockaddr *)&remote_simulator_addr_, remote_simulator_addr_len_);
     }
 
     if (len <= 0)
     {
       gzerr << "Failed sending mavlink message: " << strerror(errno) << "\n";
     }
+    if (len2 <= 0)
+    {
+      gzerr << "Failed sending mavlink 2 message: " << strerror(errno) << "\n";
+    }
+
   }
 }
 
@@ -1188,6 +1218,12 @@ void GazeboMavlinkInterface::pollForMAVLinkMessages()
 
   } else {
     fds[0].fd = simulator_socket_fd_;
+     if (simulate_redundant_)
+    {
+      fds[1].fd = simulator_socket_fd_2_;
+      fds[1].events = POLLIN;
+      fds_count = 2;
+    }
   }
   fds[0].events = POLLIN;
 
@@ -1195,9 +1231,9 @@ void GazeboMavlinkInterface::pollForMAVLinkMessages()
   bool received_actuator = false;
 
   do {
-    int timeout_ms = (received_first_actuator_ && enable_lockstep_) ? 1000 : 0;
+    int timeout_ms = (received_first_actuator_ && enable_lockstep_) ? 100 : 0;
 
-    int ret = ::poll(&fds[0], fds_count, timeout_ms);
+    int ret = ::poll(&fds[0], 1, timeout_ms);
 
     if (ret == 0 && timeout_ms > 0) {
       gzerr << "poll timeout\n";
@@ -1205,6 +1241,21 @@ void GazeboMavlinkInterface::pollForMAVLinkMessages()
 
     if (ret < 0) {
       gzerr << "poll error: " << strerror(errno) << "\n";
+    }
+
+    // YUSUF COMMENT SELECT DENE burada tıkanıyor
+    if (simulate_redundant_)
+    {
+      int ret_2 = ::poll(&fds[1], 1, timeout_ms);
+      if (ret_2 == 0 && timeout_ms > 0)
+      {
+        gzerr << "poll timeout 2\n";
+       }
+
+      if (ret_2 < 0)
+      {
+        gzerr << "poll error 2: " << strerror(errno) << "\n";
+      }
     }
 
     if (fds[0].revents & POLLIN) {
@@ -1441,6 +1492,10 @@ void GazeboMavlinkInterface::close()
 
     } else {
       ::close(simulator_socket_fd_);
+      if (simulate_redundant_)
+      {
+        ::close(simulator_socket_fd_2_);
+      }
     }
   }
 }
