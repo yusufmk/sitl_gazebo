@@ -343,6 +343,9 @@ private:
   struct sockaddr_in remote_simulator_addr_;
   socklen_t remote_simulator_addr_len_;
 
+  struct sockaddr_in remote_simulator_addr_2_;
+  socklen_t remote_simulator_addr_len_2_;
+
   int qgc_udp_port_;
   struct sockaddr_in remote_qgc_addr_;
   socklen_t remote_qgc_addr_len_;
