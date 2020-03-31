@@ -541,13 +541,14 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
       remote_simulator_addr_.sin_addr.s_addr = mavlink_addr_; // INADDR_ANY
       remote_simulator_addr_.sin_port = htons(mavlink_udp_port_); // 14560
 
+      // YUSUF
       if (simulate_redundant_)
       {
         remote_simulator_addr_2_.sin_addr.s_addr = mavlink_addr_; // INADDR_ANY
         remote_simulator_addr_2_.sin_port = htons(mavlink_udp_port_+1); // 14561
       }
 
-
+      //YUSUF
       local_simulator_addr_.sin_addr.s_addr = htonl(INADDR_ANY);
       local_simulator_addr_.sin_port = htons(0);
 
@@ -571,7 +572,7 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
       if (simulate_redundant_)
       {
         if (bind(simulator_socket_fd_2_, (struct sockaddr *)&local_simulator_addr_, local_simulator_addr_len_) < 0) {
-        gzerr << "bind failed: " << strerror(errno) << ", aborting\n";
+        gzerr << "bind 2 failed: " << strerror(errno) << ", aborting\n";
         abort();
         }
       }
