@@ -40,14 +40,20 @@
     </physics>
     <gui fullscreen='0'>
       <camera name='user_camera'>
-        <pose>-10 0 6 0 0.3 0</pose>
-        <!-- <view_controller>orbit</view_controller>
+        <pose>0 0 2 0 0.3 0</pose>
+        <view_controller>orbit</view_controller>
         <projection_type>perspective</projection_type>
         <track_visual>
           <name>iris</name>
           <use_model_frame>1</use_model_frame>
-        </track_visual> -->
+          <min_dist>0</min_dist>
+          <max_dist>999</max_dist>
+        </track_visual>
       </camera>
     </gui>
+    <scene>
+      <sky>
+      </sky>
+    </scene>
   </world>
 </sdf>
