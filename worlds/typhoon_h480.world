@@ -1,9 +1,9 @@
 <?xml version="1.0" ?>
 <sdf version="1.5">
   <world name="default">
-    <!--<gui>
+    <gui>
       <plugin name="video_widget" filename="libgazebo_video_stream_widget.so"/>
-    </gui>-->
+    </gui>
     <!-- A global light source -->
     <include>
       <uri>model://sun</uri>
@@ -11,9 +11,6 @@
     <!-- A ground plane -->
     <include>
       <uri>model://ground_plane</uri>
-    </include>
-    <include>
-      <uri>model://typhoon_h480</uri>
     </include>
     <include>
       <uri>model://asphalt_plane</uri>
