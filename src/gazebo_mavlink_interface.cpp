@@ -453,26 +453,20 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
 #endif
 
   if (_sdf->HasElement("mavlink_udp_port")) {
-    mavlink_udp_port_ = _sdf->GetElement("mavlink_udp_port")->Get<int>();
-    mavlink_interface_->SetMavlinkUdpPort(mavlink_udp_port);
-    mavlink_udp_port_2_ = mavlink_udp_port_+1;
+    int mavlink_udp_port_ = _sdf->GetElement("mavlink_udp_port")->Get<int>();
+    mavlink_interface_->SetMavlinkUdpPort(mavlink_udp_port_);
 	// WARNING !!! MAVLINK_INTERFACE DIYE BISEY CIKMIS
   }
 
   if (_sdf->HasElement("mavlink_tcp_port")) {
-    mavlink_tcp_port_ = _sdf->GetElement("mavlink_tcp_port")->Get<int>();
-	mavlink_interface_->SetMavlinkTcpPort(mavlink_tcp_port);
-    mavlink_tcp_port_2_ = mavlink_tcp_port_+1;
+    int mavlink_tcp_port_ = _sdf->GetElement("mavlink_tcp_port")->Get<int>();
+	  mavlink_interface_->SetMavlinkTcpPort(mavlink_tcp_port_);
 	// WARNING !!!
   }
   if(_sdf->HasElement("simulate_redundant"))
   {
     simulate_redundant_ = _sdf->GetElement("simulate_redundant")->Get<bool>();
   }
-
-
-  model_param(worldName, model_->GetName(), "mavlink_tcp_port", mavlink_tcp_port_);
-
 
   if (_sdf->HasElement("qgc_addr")) {
     std::string qgc_addr = _sdf->GetElement("qgc_addr")->Get<std::string>();

@@ -116,7 +116,7 @@ private:
 
     void handle_message(mavlink_message_t *msg, bool &received_actuator);
     void acceptConnections();
-    
+
     // Serial interface
     void do_read();
     void parse_buffer(const boost::system::error_code& err, std::size_t bytes_t);
@@ -128,7 +128,7 @@ private:
     static const unsigned n_out_max = 16;
 
     int input_index_[n_out_max];
-    
+
     struct sockaddr_in local_simulator_addr_;
     socklen_t local_simulator_addr_len_;
     struct sockaddr_in remote_simulator_addr_;
@@ -180,7 +180,7 @@ private:
     bool serial_enabled_;
     std::thread io_thread;
     std::string device_;
-    
+
     std::recursive_mutex mutex;
     std::mutex actuator_mutex;
 
