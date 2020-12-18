@@ -108,6 +108,7 @@ public:
     inline void SetSdkUdpPort(int sdk_udp_port) {sdk_udp_port_ = sdk_udp_port;}
     inline void SetHILMode(bool hil_mode) {hil_mode_ = hil_mode;}
     inline void SetHILStateLevel(bool hil_state_level) {hil_state_level_ = hil_state_level;}
+    inline void SetSimulateRedundant(bool simulate_redundant) { simulate_redundant_ = simulate_redundant;}
 
 private:
     bool received_first_actuator_;
@@ -129,10 +130,20 @@ private:
 
     int input_index_[n_out_max];
 
+    // random port
     struct sockaddr_in local_simulator_addr_;
     socklen_t local_simulator_addr_len_;
+
+    struct sockaddr_in local_simulator_addr_2;
+    socklen_t local_simulator_addr_len_2;
+
+    // 14560 no'lu socket yani PX4_1
     struct sockaddr_in remote_simulator_addr_;
     socklen_t remote_simulator_addr_len_;
+
+    // 14561 no'lu socket yani PX4_2
+    struct sockaddr_in remote_simulator_addr_2;
+    socklen_t remote_simulator_addr_len_2;
 
     int qgc_udp_port_;
     struct sockaddr_in remote_qgc_addr_;
@@ -152,6 +163,7 @@ private:
     enum FD_TYPES {
         LISTEN_FD,
         CONNECTION_FD,
+        CONNECTION_FD_2,
         N_FDS
     };
     struct pollfd fds_[N_FDS];
@@ -167,6 +179,7 @@ private:
     boost::asio::serial_port serial_dev;
 
     int simulator_socket_fd_;
+    int simulator_socket_fd_2;
     int simulator_tcp_client_fd_;
 
     int qgc_socket_fd_ {-1};
@@ -191,6 +204,8 @@ private:
 
     bool hil_mode_;
     bool hil_state_level_;
+    bool simulate_redundant_{false};
+
 
     std::atomic<bool> gotSigInt_ {false};
 };

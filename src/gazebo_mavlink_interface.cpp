@@ -463,10 +463,14 @@ void GazeboMavlinkInterface::Load(physics::ModelPtr _model, sdf::ElementPtr _sdf
 	  mavlink_interface_->SetMavlinkTcpPort(mavlink_tcp_port_);
 	// WARNING !!!
   }
-  if(_sdf->HasElement("simulate_redundant"))
+
+  bool simulate_redundant = false;
+  if (_sdf->HasElement("simulate_redundant"))
   {
-    simulate_redundant_ = _sdf->GetElement("simulate_redundant")->Get<bool>();
+    simulate_redundant = _sdf->GetElement("simulate_redundant")->Get<bool>();
+    mavlink_interface_->SetSimulateRedundant(simulate_redundant);
   }
+  gzmsg << "Redundancy is " << (simulate_redundant ? "ENABLED !!" : "disabled") << "\n";
 
   if (_sdf->HasElement("qgc_addr")) {
     std::string qgc_addr = _sdf->GetElement("qgc_addr")->Get<std::string>();
@@ -599,8 +603,6 @@ void GazeboMavlinkInterface::OnUpdate(const common::UpdateInfo&  /*_info*/) {
 
   last_time_ = current_time;
 }
-
-// WARNING !!!! BURADA SEND_MAVLINK_MESSAGE VARDI, ONUN YAPISI DEGISMIS
 
 template <class T>
 void GazeboMavlinkInterface::setMavlinkSensorOrientation(const ignition::math::Vector3d& u_Xs, T& sensor_msg) {
@@ -1118,8 +1120,6 @@ void GazeboMavlinkInterface::BarometerCallback(BarometerPtr& baro_msg) {
 
   baro_updated_ = true;
 }
-
-// WARNING !!! POLLFORMAVLINK MESSAGES VARDI GITMIS
 
 void GazeboMavlinkInterface::WindVelocityCallback(WindPtr& msg) {
   wind_vel_ = ignition::math::Vector3d(msg->velocity().x(),

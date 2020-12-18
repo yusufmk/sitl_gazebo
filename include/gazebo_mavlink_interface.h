@@ -299,7 +299,5 @@ private:
 
   bool hil_mode_;
   bool hil_state_level_;
-  bool simulate_redundant_ {false};
-
 };
 }

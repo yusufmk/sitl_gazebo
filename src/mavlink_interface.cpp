@@ -3,8 +3,9 @@
 MavlinkInterface::MavlinkInterface() :
     received_first_actuator_(false),
     qgc_socket_fd_(0),
-    sdk_socket_fd_(0), 
+    sdk_socket_fd_(0),
     simulator_socket_fd_(0),
+    simulator_socket_fd_2(0),
     simulator_tcp_client_fd_(0),
     serial_enabled_(false),
     m_status {},
@@ -110,9 +111,17 @@ void MavlinkInterface::Load()
     remote_simulator_addr_.sin_family = AF_INET;
     remote_simulator_addr_len_ = sizeof(remote_simulator_addr_);
 
+    memset((char *)&remote_simulator_addr_2, 0, sizeof(remote_simulator_addr_2));
+    remote_simulator_addr_2.sin_family = AF_INET;
+    remote_simulator_addr_len_2 = sizeof(remote_simulator_addr_2);
+
     memset((char *)&local_simulator_addr_, 0, sizeof(local_simulator_addr_));
     local_simulator_addr_.sin_family = AF_INET;
     local_simulator_addr_len_ = sizeof(local_simulator_addr_);
+
+    memset((char *)&local_simulator_addr_2, 0, sizeof(local_simulator_addr_2));
+    local_simulator_addr_2.sin_family = AF_INET;
+    local_simulator_addr_len_2 = sizeof(local_simulator_addr_2);
 
     if (use_tcp_) {
 
@@ -182,13 +191,24 @@ void MavlinkInterface::Load()
 
     } else {
       remote_simulator_addr_.sin_addr.s_addr = mavlink_addr_;
-      remote_simulator_addr_.sin_port = htons(mavlink_udp_port_);
+      remote_simulator_addr_.sin_port = htons(mavlink_udp_port_); // 14560
+
+      remote_simulator_addr_2.sin_addr.s_addr = mavlink_addr_;
+      remote_simulator_addr_2.sin_port = htons(mavlink_udp_port_+1);  // 14561
 
       local_simulator_addr_.sin_addr.s_addr = htonl(INADDR_ANY);
-      local_simulator_addr_.sin_port = htons(0);
+      local_simulator_addr_.sin_port = htons(0);  // random port 1
+
+      local_simulator_addr_2.sin_addr.s_addr = htonl(INADDR_ANY);
+      local_simulator_addr_2.sin_port = htons(0); // random port 2
 
       if ((simulator_socket_fd_ = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         std::cerr << "Creating UDP socket failed: " << strerror(errno) << ", aborting\n";
+        abort();
+      }
+
+      if ((simulator_socket_fd_2 = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        std::cerr << "Creating UDP socket for 2nd px4 failed: " << strerror(errno) << ", aborting\n";
         abort();
       }
 
@@ -199,14 +219,29 @@ void MavlinkInterface::Load()
         abort();
       }
 
+      result = fcntl(simulator_socket_fd_2, F_SETFL, O_NONBLOCK);
+      if (result == -1) {
+        std::cerr << "setting 2nd px4 socket to non-blocking failed: " << strerror(errno) << ", aborting\n";
+        abort();
+      }
+
+      // local random 1. portu ve ip'yi sokete bagla.
       if (bind(simulator_socket_fd_, (struct sockaddr *)&local_simulator_addr_, local_simulator_addr_len_) < 0) {
         std::cerr << "bind failed: " << strerror(errno) << ", aborting\n";
         abort();
       }
 
+      // local random 2. portu ve ip'yi sokete bagla.
+      if (bind(simulator_socket_fd_2, (struct sockaddr *)&local_simulator_addr_2, local_simulator_addr_len_2) < 0) {
+        std::cerr << "2nd px4 socket bind failed: " << strerror(errno) << ", aborting\n";
+        abort();
+      }
+
       memset(fds_, 0, sizeof(fds_));
-      fds_[CONNECTION_FD].fd = simulator_socket_fd_;
+      fds_[CONNECTION_FD].fd = simulator_socket_fd_;  // random portlu 1.soket
       fds_[CONNECTION_FD].events = POLLIN | POLLOUT; // read/write
+      fds_[CONNECTION_FD_2].fd = simulator_socket_fd_2; // random portlu 2.soket
+      fds_[CONNECTION_FD_2].events = POLLIN | POLLOUT; // read/write
     }
   }
 }
@@ -244,7 +279,8 @@ void MavlinkInterface::pollForMAVLinkMessages()
 
       if (i == LISTEN_FD) { // if event is raised on the listening socket
         acceptConnections();
-      } else { // if event is raised on connection socket
+      }
+      if (i == CONNECTION_FD) { // if event is raised on connection 1 socket
         int ret = recvfrom(fds_[i].fd, _buf, sizeof(_buf), 0, (struct sockaddr *)&remote_simulator_addr_, &remote_simulator_addr_len_);
         if (ret < 0) {
           // all data is read if EWOULDBLOCK is raised
@@ -253,6 +289,39 @@ void MavlinkInterface::pollForMAVLinkMessages()
           }
           continue;
         }
+        // std::cout << "GAZEBO pollForMavlinkMsgs->poll CONNECTION_FD icinde. remote_sim_addr.sin_port: " << ntohs(remote_simulator_addr_.sin_port) << "\n";
+
+        // client closed the connection orderly, only makes sense on tcp
+        if (use_tcp_ && ret == 0) {
+          std::cerr << "Connection closed by client." << "\n";
+          close_conn_ = true;
+          continue;
+        }
+
+        // data received
+        int len = ret;
+        mavlink_message_t msg;
+        mavlink_status_t status;
+        for (unsigned i = 0; i < len; ++i) {
+          if (mavlink_parse_char(MAVLINK_COMM_0, _buf[i], &msg, &status)) {
+            if (hil_mode_) {
+              send_mavlink_message(&msg);
+            }
+            handle_message(&msg, received_actuator);
+          }
+        }
+      }
+      else
+      {// if event is raised on connection 2 socket
+        int ret = recvfrom(fds_[i].fd, _buf, sizeof(_buf), 0, (struct sockaddr *)&remote_simulator_addr_2, &remote_simulator_addr_len_2);
+        if (ret < 0) {
+          // all data is read if EWOULDBLOCK is raised
+          if (errno != EWOULDBLOCK) { // disconnected from client
+            std::cerr << "recvfrom 2 error: " << strerror(errno) << "\n";
+          }
+          continue;
+        }
+        // std::cout << "GAZEBO pollForMavlinkMsgs->poll CONNECTION_FD_2 icinde. remote_sim_addr 2.sin_port: " << ntohs(remote_simulator_addr_2.sin_port) << "\n";
 
         // client closed the connection orderly, only makes sense on tcp
         if (use_tcp_ && ret == 0) {
@@ -342,6 +411,8 @@ void MavlinkInterface::acceptConnections()
     }
     return;
   }
+
+  std::cout << "connection accepted, remote sim addr.sin_port: " << ntohs(remote_simulator_addr_.sin_port) << "\n";
 
   // assign socket to connection descriptor on success
   fds_[CONNECTION_FD].fd = ret; // socket is replaced with latest connection
@@ -451,15 +522,29 @@ void MavlinkInterface::send_mavlink_message(const mavlink_message_t *message)
       }
 
       size_t len;
+      size_t len2;
       if (use_tcp_) {
         len = send(fds_[CONNECTION_FD].fd, buffer, packetlen, 0);
       } else {
         len = sendto(fds_[CONNECTION_FD].fd, buffer, packetlen, 0, (struct sockaddr *)&remote_simulator_addr_, remote_simulator_addr_len_);
+        // std::cout << "GAZEBO send_mavlink_msg-> remote_simulator_addr.sin_port" << ntohs(remote_simulator_addr_.sin_port) << "\n";
+        len2 = sendto(fds_[CONNECTION_FD_2].fd, buffer, packetlen, 0, (struct sockaddr *)&remote_simulator_addr_2, remote_simulator_addr_len_2);
+        // std::cout << "GAZEBO send_mavlink_msg to 2nd px4-> remote_simulator_addr_2.sin_port" << ntohs(remote_simulator_addr_2.sin_port) << "\n";
       }
       if (len < 0) {
         std::cerr << "Failed sending mavlink message: " << strerror(errno) << "\n";
         if (errno == ECONNRESET || errno == EPIPE) {
           if (use_tcp_) { // udp socket remains alive
+            std::cerr << "Closing connection." << "\n";
+            close_conn_ = true;
+          }
+        }
+      }
+      if (len2 < 0) {
+        std::cerr << "Failed sending mavlink message to 2nd px4: " << strerror(errno) << "\n";
+        if (errno == ECONNRESET || errno == EPIPE) {
+          if (use_tcp_) // udp socket remains alive
+          {
             std::cerr << "Closing connection." << "\n";
             close_conn_ = true;
           }
